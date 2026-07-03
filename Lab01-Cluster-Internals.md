@@ -94,6 +94,12 @@ Mục tiêu: chặn mọi pod trong `smartapp` thiếu label `team`. Đây là c
 
 ### 3a. Cách nhanh (khuyến nghị nếu có Kyverno): policy tương đương
 > ⚠️ Kyverno ≥ 1.13: `spec.validationFailureAction` đã deprecated → chuyển thành `validate.failureAction` trong mỗi rule (xem ghi chú Lab04 BT2).
+
+Install Kyverno
+```bash
+kubectl create -f https://github.com/kyverno/kyverno/releases/download/v1.16.2/install.yaml
+```
+ 
 ```bash
 kubectl create -f - <<'EOF'
 apiVersion: kyverno.io/v1
