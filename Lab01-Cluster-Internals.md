@@ -42,9 +42,9 @@ echo "pod $POD đang trên node $NODE"
 SSH vào `$NODE`, rồi:
 ```bash
 # Container thật theo CRI
-sudo crictl ps --name web
+sudo crictl ps --name podinfo
 # Soi chi tiết (chú ý: PID, image digest OCI, mounts)
-CID=$(sudo crictl ps --name web -q | head -1)
+CID=$(sudo crictl ps --name podinfo -q | head -1)
 sudo crictl inspect $CID | grep -E '"pid"|"image"|"runtimeType"' | head
 # Tầng containerd
 sudo ctr -n k8s.io containers ls | grep $(echo $CID | cut -c1-12) || true
