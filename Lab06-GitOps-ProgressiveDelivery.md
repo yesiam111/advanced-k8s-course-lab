@@ -18,8 +18,8 @@ base/
   service.yaml
   kustomization.yaml
 overlays/
-  staging/kustomization.yaml      # replicas 2, tag 6.7.0
-  production/kustomization.yaml   # replicas 5, tag 6.7.0
+  staging/kustomization.yaml      # replicas 2, tag 6.14.0
+  production/kustomization.yaml   # replicas 5, tag 6.14.0
 ```
 `base/kustomization.yaml`:
 ```yaml
@@ -32,7 +32,7 @@ namespace: smartapp
 replicas:
 - { name: web, count: 5 }
 images:
-- { name: web, newName: stefanprodan/podinfo, newTag: "6.7.0" }
+- { name: web, newName: stefanprodan/podinfo, newTag: "6.14.0" }
 ```
 Kiểm tra render: `kubectl kustomize overlays/production`
 **Kết quả mong đợi:** manifest production có 5 replica; staging có 2. Commit & push lên Git.
@@ -105,6 +105,8 @@ spec:
     failureLimit: 1
     provider:
       prometheus:
+        # ⚠️ Địa chỉ này TÙY CỤM (tên Service của Prometheus). Xác minh trên cụm của bạn:
+        #   kubectl -n monitoring get svc | grep -i prometheus
         address: http://kps-kube-prometheus-stack-prometheus.monitoring:9090
         query: |
           sum(rate(http_requests_total{app="web",status!~"5.."}[2m]))
@@ -121,7 +123,7 @@ spec:
     spec:
       containers:
       - name: web
-        image: stefanprodan/podinfo:6.7.0
+        image: stefanprodan/podinfo:6.13.0    # bản hiện tại; canary sẽ promote lên 6.14.0
         ports: [{ containerPort: 9898 }]
   strategy:
     canary:
@@ -139,7 +141,7 @@ kubectl argo rollouts get rollout web -n smartapp --watch
 ```
 Trigger một bản mới (tốt) và promote:
 ```bash
-kubectl argo rollouts set image web web=stefanprodan/podinfo:6.7.1 -n smartapp
+kubectl argo rollouts set image web web=stefanprodan/podinfo:6.14.0 -n smartapp
 kubectl argo rollouts get rollout web -n smartapp --watch
 ```
 **Kết quả mong đợi:** rollout đi qua các bước canary; cổng analysis PASS (success-rate ≥ 95%); promote tới 100%.
@@ -151,7 +153,7 @@ kubectl argo rollouts get rollout web -n smartapp --watch
 Đẩy một bản "lỗi" và để hệ thống tự quyết:
 ```bash
 # Dùng tag lỗi hoặc bơm lỗi 500 song song để success-rate tụt
-kubectl argo rollouts set image web web=stefanprodan/podinfo:6.7.1 -n smartapp
+kubectl argo rollouts set image web web=stefanprodan/podinfo:6.14.0 -n smartapp
 # Trong khi canary chạy, bơm lỗi để vi phạm ngưỡng:
 kubectl -n smartapp run errgen --rm -it --image=busybox --restart=Never -- \
   sh -c 'for i in $(seq 1 800); do wget -q -O- http://web.smartapp:9898/status/500 >/dev/null 2>&1; done'
@@ -182,7 +184,7 @@ kubectl argo rollouts get rollout web -n smartapp --watch
 
 # (b) Giữ cụm, chỉ chuyển web về Deployment:
 kubectl -n smartapp delete rollout web --ignore-not-found
-kubectl -n smartapp create deployment web --image=stefanprodan/podinfo:6.7.0 --replicas=2
+kubectl -n smartapp create deployment web --image=stefanprodan/podinfo:6.14.0 --replicas=2
 kubectl -n smartapp delete pod errgen --ignore-not-found
 ```
 

@@ -20,7 +20,7 @@
 - `smartapp-db` (CNPG) trong namespace gốc đã **bị xóa** — dữ liệu không còn ở đó.
 - Velero + MinIO + StorageClass hỗ trợ snapshot đã pre-baked.
 
-> 🔍 Tự kiểm: `kubectl get backups.velero.io -A` (hoặc `velero backup get`) để thấy backup; bảng `t` có 5 dòng trước thảm họa.
+> 🔍 Tự kiểm: `kubectl get backups.velero.io -A` (hoặc `velero backup get`) để thấy backup. Số dòng của bảng `t` **không được cho trước** — bạn phải restore rồi tự đếm.
 
 ---
 
@@ -28,13 +28,15 @@
 
 1. **Có restore thành công.** Một Velero `Restore` ở trạng thái `Completed`.
 2. **DB hồi sinh.** CNPG `smartapp-db` chạy trong namespace đích `smartapp-dr` (có `currentPrimary`).
-3. **Dữ liệu đầy đủ.** Bảng `t` trong DB đã khôi phục có **đúng số dòng như trước thảm họa** (5).
+3. **Dữ liệu đầy đủ.** Bảng `t` trong DB đã khôi phục có **đúng số dòng như trước thảm họa** (bạn tự xác định con số bằng cách restore rồi đếm — không được cho trước).
+4. **Hàng đánh dấu còn nguyên.** Bảng `t` chứa một hàng **sentinel** (cột `tag` dạng `dr-canary-…`) chỉ tồn tại trong backup. Nó phải xuất hiện trong DB đã khôi phục — bằng chứng bạn *restore* thật chứ không dựng lại rồi gõ tay.
 
 ## `answers.env`
 
 ```env
-ROWS_BEFORE=...            # số dòng trong bảng t trước thảm họa (tự xác định từ backup)
+ROWS_BEFORE=...            # số dòng trong bảng t trước thảm họa (tự xác định TỪ backup đã restore)
 ROWS_AFTER=...             # số dòng sau khi khôi phục (phải khớp ROWS_BEFORE)
+SENTINEL_TAG="..."         # giá trị cột 'tag' của hàng sentinel, đọc từ DB đã restore
 ```
 
 ## Tự chấm

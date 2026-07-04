@@ -22,7 +22,7 @@ Dưới tải, `web` bị **OOMKilled** liên tục; một `worker` chạy 24/7 
 
 ## Mục tiêu (trạng thái cuối được chấm)
 
-1. **Hết OOM.** Đặt memory limit hợp lý (dựa trên đo đạc thực tế, không đoán) sao cho `web` **không còn OOMKilled**.
+1. **Hết OOM.** `web` có một **working set thật (~140Mi)** — một limit đặt bừa (vd 64/128Mi) sẽ OOM/crashloop **thật**. Hãy **đo** mức RAM thực tế (`kubectl top pod`, cgroup, sự kiện OOM) rồi đặt limit đủ để `web` **Available** và **không còn OOMKilled**. ⚠️ Grader sẽ **sinh tải HTTP** rồi kiểm tra web vẫn chạy — không thể vượt qua bằng cách chép một con số từ bài hướng dẫn.
 2. **Scale-to-zero theo hàng đợi.** Một KEDA `ScaledObject` cho `worker` với `minReplicaCount: 0`, scale theo độ sâu hàng đợi Redis.
 3. **HPA cho web.** Một HorizontalPodAutoscaler nhắm `web`.
 4. **Trải đều.** `web` có `topologySpreadConstraints` để phân bố trên nhiều node.
@@ -30,8 +30,8 @@ Dưới tải, `web` bị **OOMKilled** liên tục; một `worker` chạy 24/7 
 ## `answers.env`
 
 ```env
-OOM_MB=...                 # memory limit (MB) bạn đặt cho web sau khi đo
-FIRST_OOM_QOS="..."        # QoS class nào bị OOM giết ĐẦU TIÊN khi node thiếu RAM
+OOM_MB=...                 # memory limit (MB) bạn đặt cho web sau khi đo (>=128 & PHẢI khớp limit thực tế)
+FIRST_OOM_QOS="..."        # QoS class nào bị OOM giết ĐẦU TIÊN khi node thiếu RAM (tự suy luận)
 ```
 
 ## Tự chấm
@@ -44,7 +44,7 @@ Lặp lại tới khi **mọi mục REQUIRED đều PASS**.
 
 ## Ràng buộc & gợi ý mức cao (không phải lời giải)
 
-- "Dựa trên đo đạc" — quan sát mức RAM thực tế (cgroup/OOM) rồi chọn limit, đừng đặt bừa số to.
+- "Dựa trên đo đạc" — quan sát mức RAM thực tế (cgroup/OOM/`kubectl top`) rồi chọn limit có headroom; `OOM_MB` phải **bằng đúng** limit bạn đặt (grader đối chiếu).
 - HPA chuẩn **không** scale-to-zero — đó là lý do cần KEDA cho `worker`.
 - Trải đều dùng `topologySpreadConstraints` theo `kubernetes.io/hostname`.
 

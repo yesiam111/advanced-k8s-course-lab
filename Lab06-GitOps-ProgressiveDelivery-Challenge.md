@@ -38,7 +38,7 @@ Nhiệm vụ: chẩn đoán vì sao cổng analysis không cho qua, sửa nó, v
 ## `answers.env`
 
 ```env
-SUCCESS_THRESHOLD="..."    # ngưỡng success-rate cổng analysis dùng (vd 0.95)
+SUCCESS_THRESHOLD="..."    # ngưỡng success-rate của cổng analysis — đọc TỪ AnalysisTemplate trên cụm (đừng đoán)
 ```
 
 ## Tự chấm
@@ -52,7 +52,7 @@ Lặp lại tới khi **mọi mục REQUIRED đều PASS**.
 ## Ràng buộc & gợi ý mức cao (không phải lời giải)
 
 - Cách sai (không học được gì): xóa bước `analysis` khỏi Rollout để nó "tự lên". Đó là gỡ cổng an toàn.
-- Cách đúng: đọc lỗi AnalysisRun → nhận ra provider không tới được Prometheus → sửa `address` (và đảm bảo có metric).
+- Cách đúng: đọc lỗi AnalysisRun → nhận ra provider không tới được Prometheus → **tự tìm địa chỉ Service Prometheus của cụm này** (`kubectl -n monitoring get svc | grep -i prometheus`) rồi sửa `address` (đừng chép cứng địa chỉ từ bài hướng dẫn — mỗi cụm một khác), và đảm bảo có metric.
 - **Mở rộng (BONUS):** đưa toàn bộ vào GitOps — một ArgoCD `Application` (Synced+Healthy) quản smartapp từ Git, bật `selfHeal`.
 
 ---

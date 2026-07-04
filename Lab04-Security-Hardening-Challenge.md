@@ -26,7 +26,7 @@
 
 ## Mục tiêu (trạng thái cuối được chấm)
 
-1. **web chạy lại VÀ tuân thủ.** `web` có pod `Available`, đồng thời: `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop **ALL** capabilities, `seccompProfile: RuntimeDefault`.
+1. **web chạy lại VÀ tuân thủ.** `web` có pod `Available`, **phản hồi `/healthz`** (không chỉ "compliant nhưng hỏng"), và tuân thủ **đầy đủ** chính sách đang enforce. Mẫu vàng securityContext (`runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation=false`, drop **ALL**, `seccompProfile: RuntimeDefault`) là điều kiện cần — nhưng ⚠️ **hãy đọc chính sách**: nó có thể đòi thêm cấu hình mức pod **ngoài** mẫu vàng của bài hướng dẫn. Chỉ copy mẫu vàng sẽ **không đủ**.
 2. **Không gỡ bảo mật.** Chính sách tổ chức (`org-require-seccomp`) vẫn **tồn tại và Enforce** sau khi bạn sửa.
 3. **Chính sách còn hiệu lực.** Một pod thiếu seccomp tạo mới vẫn **bị từ chối** (chứng minh bạn không vô hiệu hóa nó).
 

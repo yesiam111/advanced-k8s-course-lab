@@ -39,7 +39,7 @@ kubectl -n smartapp describe pod oom | grep -iE 'OOMKilled|Reason|Exit Code'
 ```
 **Kết quả mong đợi:** pod `oom` bị `OOMKilled`, exit code `137`.
 
-**Câu hỏi suy ngẫm:** workload đặt ở QoS nào sẽ bị OOM giết đầu tiên khi node thiếu RAM? *(Gợi ý: BestEffort — không có requests/limits.)*
+**Câu hỏi suy ngẫm:** workload đặt ở QoS nào sẽ bị OOM giết đầu tiên khi node thiếu RAM? *(Gợi ý: ôn lại ba lớp QoS — Guaranteed, Burstable, BestEffort — và lớp nào "rẻ nhất" để kernel hi sinh trước.)*
 
 Dọn dẹp: `kubectl -n smartapp delete pod oom`
 
@@ -53,7 +53,7 @@ helm install keda kedacore/keda -n keda --create-namespace
 ```
 Tạo một worker giả lập (đọc/đếm job) và ScaledObject:
 ```bash
-kubectl -n smartapp create deployment worker --image=stefanprodan/podinfo:6.7.0
+kubectl -n smartapp create deployment worker --image=stefanprodan/podinfo:6.14.0
 kubectl apply -f - <<'EOF'
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -168,13 +168,13 @@ value: 1000000
 EOF
 
 # Lấp cụm bằng pod ưu tiên thấp
-kubectl -n smartapp create deploy filler --image=stefanprodan/podinfo:6.7.0 --replicas=20
+kubectl -n smartapp create deploy filler --image=stefanprodan/podinfo:6.14.0 --replicas=20
 kubectl -n smartapp patch deploy filler --type=merge -p '{"spec":{"template":{"spec":{"priorityClassName":"low-priority"}}}}'
 kubectl -n smartapp set resources deploy/filler --requests=cpu=500m
 
 # Tạo pod ưu tiên cao đòi nhiều tài nguyên -> đẩy filler
-kubectl -n smartapp run vip --image=stefanprodan/podinfo:6.7.0 \
-  --overrides='{"apiVersion":"v1","spec":{"priorityClassName":"high-priority","containers":[{"name":"vip","image":"stefanprodan/podinfo:6.7.0","resources":{"requests":{"cpu":"2"}}}]}}'
+kubectl -n smartapp run vip --image=stefanprodan/podinfo:6.14.0 \
+  --overrides='{"apiVersion":"v1","spec":{"priorityClassName":"high-priority","containers":[{"name":"vip","image":"stefanprodan/podinfo:6.14.0","resources":{"requests":{"cpu":"2"}}}]}}'
 kubectl -n smartapp get events | grep -i preempt
 ```
 **Kết quả mong đợi:** khi cụm chật, pod `vip` (ưu tiên cao) khiến scheduler **preempt** (evict) pod `filler` (ưu tiên thấp) để có chỗ.

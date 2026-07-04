@@ -28,11 +28,13 @@ Nhiệm vụ: tìm và gỡ các lỗi trong `Reconcile()` để Operator vận 
 ## Mục tiêu (trạng thái cuối được chấm)
 
 1. **Cài & chạy Operator.** `make install` đưa CRD `WebApp` vào cluster; chạy controller (`make run` ngoài cụm, hoặc `make deploy`).
-2. **Tạo đúng từ spec.** Apply một `WebApp` tên `smartapp-web` (image `stefanprodan/podinfo:6.7.0`, `replicas: 3`) → Operator tạo một Deployment đúng image và đúng số replicas.
-3. **Self-heal.** Xóa Deployment con bằng tay → Operator dựng lại gần như tức thì.
-4. **Hội tụ theo spec.** `patch` `spec.replicas` (vd 5) → Deployment đổi theo.
-5. **Status đúng.** `WebApp.status.phase` chuyển `Ready` khi đủ replica sẵn sàng.
-6. **Cascade delete.** Xóa `WebApp` → Deployment + pod con tự bị dọn (không viết code xóa nào).
+2. **Tạo đúng từ spec.** Apply một `WebApp` tên `smartapp-web` (image `stefanprodan/podinfo:6.14.0`, `replicas: 3`) → Operator tạo một Deployment đúng image và đúng số replicas, **có ownerReference trỏ về WebApp**.
+3. **Service cho web.** Operator phải dựng thêm một **Service** (port `9898`) cho web, cũng mang ownerReference. ⚠️ Bài hướng dẫn **chỉ dựng Deployment** — phần Service bạn phải **tự viết**, không có sẵn để chép.
+4. **Self-heal.** Xóa Deployment con bằng tay → Operator dựng lại gần như tức thì.
+5. **Hội tụ theo spec.** `patch` `spec.replicas` (vd 5) → Deployment đổi theo.
+6. **Chống drift.** Sửa **tay** image của Deployment con sang giá trị sai → Operator phải **hoàn nguyên** về đúng `spec.image`. (Grader sẽ tự làm hỏng image con rồi kiểm tra bạn sửa lại.)
+7. **Status đúng.** `WebApp.status.phase` chuyển `Ready` khi đủ replica sẵn sàng, và `status.readyReplicas` là **số** cập nhật từ Deployment.
+8. **Cascade delete.** Xóa `WebApp` → Deployment + Service + pod con tự bị dọn (không viết code xóa nào).
 
 ## Tự chấm
 
@@ -44,9 +46,10 @@ Operator phải đang chạy khi chấm. Lặp lại tới khi **mọi mục REQ
 
 ## Ràng buộc & gợi ý mức cao (không phải lời giải)
 
-- `Reconcile()` phải **idempotent** — chạy lại nhiều lần không lỗi, không tạo trùng. Nghĩ tới `CreateOrUpdate` thay vì `Create` trần.
-- Self-heal và cascade delete đều dựa trên **ownerReference** + việc controller `Owns(&Deployment{})` để watch con.
-- `status.phase` không tự có — bạn phải cập nhật nó từ `Deployment.Status`.
+- `Reconcile()` phải **idempotent** — chạy lại nhiều lần không lỗi, không tạo trùng. Nghĩ tới `CreateOrUpdate` thay vì `Create` trần. (Chống drift ở mục 6 chỉ đạt nếu bạn `CreateOrUpdate` mỗi vòng, không phải "tạo nếu chưa có".)
+- Self-heal, chống drift và cascade delete đều dựa trên **ownerReference** + việc controller `Owns(...)` để watch con — nhớ `Owns` cả Deployment **và** Service.
+- Service không có sẵn trong bài hướng dẫn: bạn cần thêm một khối `CreateOrUpdate` cho `corev1.Service` (selector `app=<tên>`, port 9898) + `SetControllerReference`, và bổ sung RBAC marker cho `services`.
+- `status.phase`/`status.readyReplicas` không tự có — bạn phải cập nhật từ `Deployment.Status`.
 
 ---
 

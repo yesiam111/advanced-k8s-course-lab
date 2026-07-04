@@ -168,7 +168,7 @@ sudo ETCDCTL_API=3 etcdctl \
   --cert=/etc/kubernetes/pki/etcd/server.crt \
   --key=/etc/kubernetes/pki/etcd/server.key \
   snapshot save $SNAP
-sudo ETCDCTL_API=3 etcdutl snapshot status $SNAP -w table   # hoặc: etcdutl snapshot status
+sudo ETCDCTL_API=3 etcdutl snapshot status $SNAP -w table
 ```
 **Kết quả mong đợi:** file snapshot được tạo; `snapshot status` in ra số key, revision — bằng chứng snapshot hợp lệ.
 
@@ -184,7 +184,7 @@ sudo mv /etc/kubernetes/manifests/etcd.yaml /tmp/etcd.yaml
 ```bash
 # 4.4 Restore từ snapshot vào data-dir mới
 sudo ETCDCTL_API=3 etcdutl snapshot restore $SNAP \
-  --data-dir /var/lib/etcd-restored          # hoặc: etcdutl snapshot restore
+  --data-dir /var/lib/etcd-restored         
 # Trỏ static pod etcd vào data-dir mới
 sudo sed 's#/var/lib/etcd#/var/lib/etcd-restored#g' /tmp/etcd.yaml | sudo tee /etc/kubernetes/manifests/etcd.yaml >/dev/null
 ```
