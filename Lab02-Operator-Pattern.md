@@ -9,7 +9,7 @@
 
 ---
 
-## 0. Repo scaffold sẵn (giảng viên chuẩn bị trước buổi)
+## 0. Repo scaffold sẵn
 
 Các lệnh dưới đây **đã được chạy sẵn**; kết quả đóng gói thành `webapp-operator/` phát cho học viên. (In ra đây để học viên hiểu repo từ đâu mà có.)
 
