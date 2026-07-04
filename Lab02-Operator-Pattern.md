@@ -73,7 +73,26 @@ kubectl -n smartapp get deploy    # CHƯA có gì — Reconcile còn rỗng
 
 ## 2. BT2 — Viết `Reconcile` (trọng tâm, timebox ≤ 90')
 
-Mở `internal/controller/webapp_controller.go`. Điền thân hàm `Reconcile` để: lấy WebApp → dựng Deployment podinfo mong muốn → đặt ownerReference → tạo/cập nhật idempotent → cập nhật status.
+Mở `internal/controller/webapp_controller.go`. Thay thế block import ở đầu file với block sau:
+
+```go
+import (
+        "context"
+
+        appsv1 "k8s.io/api/apps/v1"
+        corev1 "k8s.io/api/core/v1"
+        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+        "k8s.io/apimachinery/pkg/runtime"
+        ctrl "sigs.k8s.io/controller-runtime"
+        "sigs.k8s.io/controller-runtime/pkg/client"
+        "sigs.k8s.io/controller-runtime/pkg/log"
+
+        webv1 "smartapp.io/webapp-operator/api/v1"
+)
+```
+
+
+Điền thân hàm `Reconcile` để: lấy WebApp → dựng Deployment podinfo mong muốn → đặt ownerReference → tạo/cập nhật idempotent → cập nhật status.
 
 ```go
 func (r *WebAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -121,14 +140,14 @@ func (r *WebAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 ```
 
-Thêm RBAC marker (ngay trên hàm) để controller được phép thao tác Deployment:
+Thêm RBAC marker **(ngay trên hàm)** để controller được phép thao tác Deployment:
 ```go
 // +kubebuilder:rbac:groups=web.smartapp.io,resources=webapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=web.smartapp.io,resources=webapps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 ```
 
-Và khai báo "owns" trong `SetupWithManager` để watch cả Deployment con:
+Khai báo "owns" trong `SetupWithManager` để watch cả Deployment con:
 ```go
 func (r *WebAppReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
@@ -160,7 +179,7 @@ kubectl -n smartapp get deploy -w
 ```
 **Kết quả mong đợi:** Deployment xuất hiện lại mà không cần can thiệp — Operator phản ứng với sự kiện xóa object con.
 
-Đổi spec và xem Operator điều hòa:
+Đổi spec và xem Operator điều phối:
 ```bash
 kubectl -n smartapp patch webapp smartapp-web --type=merge -p '{"spec":{"replicas":5}}'
 kubectl -n smartapp get deploy smartapp-web   # READY tiến tới 5/5
@@ -180,7 +199,7 @@ kubectl -n smartapp get deploy,pods -l app=smartapp-web   # tự biến mất
 
 ---
 
-## 5. (Nâng cao — lab nhanh thì làm thêm)
+## 5. (Nâng cao)
 
 - **Tạo thêm Service:** mở rộng Reconcile dựng một `Service` cho web (port 9898) cũng với ownerReference; xác minh cascade delete dọn cả Service.
 - **Finalizer:** thêm finalizer `webapp.smartapp.io/cleanup`, log "dọn tài nguyên ngoài cụm" trước khi cho xóa CR; quan sát object kẹt ở `Terminating` cho tới khi gỡ finalizer.
@@ -194,10 +213,3 @@ kubectl -n smartapp get deploy,pods -l app=smartapp-web   # tự biến mất
 - Bạn đã xây một Operator hoạt động: CRD `WebApp` + controller điều hòa Deployment podinfo của smartapp.
 - Bạn đã thấy ba điều cốt lõi vận hành: Reconcile idempotent, self-heal (watch object con), và cascade delete (ownerReference).
 - **Bài 03:** chuyển từ "điều khiển" sang "nhìn thấy" — dựng hệ quan sát (metrics/logs/traces) cho chính smartapp, gồm cả podinfo `/metrics` mà ta vừa triển khai.
-
-### Checklist hoàn thành
-- [ ] CRD `WebApp` cài được; `kubectl get webapp` hiển thị cột Replicas/Phase.
-- [ ] Reconcile tạo Deployment podinfo đúng image/replicas từ spec.
-- [ ] Xóa Deployment con → Operator tạo lại (self-heal).
-- [ ] Đổi `replicas` trong spec → Deployment điều chỉnh theo.
-- [ ] Xóa `WebApp` → Deployment/Service con tự bị dọn (cascade).
