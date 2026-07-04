@@ -5,8 +5,6 @@
 
 **Thời lượng:** ~60 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm` ≥ 3.12, cụm có Internet (pull Helm charts) hoặc registry nội bộ. Có sẵn namespace `smartapp` với deployment `web` (podinfo) từ Bài 01.
 
-> 🧑‍🏫 **Ghi chú nhịp độ (giảng viên):** cài stack bằng Helm rất nhanh trên cụm có sẵn → bài này thường **xong sớm**. Dồn thời gian cho BT4 (tương quan) và phần (Nâng cao). Nếu Internet hạn chế, chuẩn bị trước các chart đã mirror.
-
 ---
 
 ## 0. Chuẩn bị namespace giám sát
