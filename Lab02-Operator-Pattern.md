@@ -73,7 +73,7 @@ kubectl -n smartapp get deploy    # CHƯA có gì — Reconcile còn rỗng
 
 ## 2. BT2 — Viết `Reconcile` (trọng tâm, timebox ≤ 90')
 
-Mở `controllers/webapp_controller.go`. Điền thân hàm `Reconcile` để: lấy WebApp → dựng Deployment podinfo mong muốn → đặt ownerReference → tạo/cập nhật idempotent → cập nhật status.
+Mở `internal/controller/webapp_controller.go`. Điền thân hàm `Reconcile` để: lấy WebApp → dựng Deployment podinfo mong muốn → đặt ownerReference → tạo/cập nhật idempotent → cập nhật status.
 
 ```go
 func (r *WebAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -121,7 +121,7 @@ func (r *WebAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 ```
 
-Đừng quên RBAC marker (ngay trên hàm) để controller được phép thao tác Deployment:
+Thêm RBAC marker (ngay trên hàm) để controller được phép thao tác Deployment:
 ```go
 // +kubebuilder:rbac:groups=web.smartapp.io,resources=webapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=web.smartapp.io,resources=webapps/status,verbs=get;update;patch
