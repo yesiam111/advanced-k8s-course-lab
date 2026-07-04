@@ -1,6 +1,6 @@
-# Lab 01 — Challenge: "Kế thừa một cụm đang ốm"
+# Lab 01 — Challenge: "Kế thừa một cụm đang lỗi"
 
-> **Thời gian ước lượng: ~60 phút**
+> **Thời gian ước lượng: ~45 phút**
 > **Đầu vào:** cluster được cấp sẵn (kubeadm + Cilium + Longhorn) với smartapp đang chạy một phần.
 > **Đầu ra:** cluster ở trạng thái healty + một "cổng" admission đang hoạt động + một snapshot etcd đã kiểm chứng + `baseline/answers.env` — dùng làm đầu vào cho Lab 02.
 >
