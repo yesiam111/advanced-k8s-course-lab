@@ -128,7 +128,7 @@ EOF
 helm install alloy grafana/alloy -n monitoring -f alloy-values.yaml
 kubectl -n monitoring get pods -l app.kubernetes.io/name=alloy -o wide   # DaemonSet: 1 pod/node
 ```
-> ⚠️ **podinfo chỉ ghi log từng request ở level `debug`** (mặc định `info` = chỉ log lúc khởi động). Bật debug để có log request cho web (nếu chạy qua `reset.sh`/`setup03.sh` thì đã bật sẵn):
+> ⚠️ **podinfo chỉ ghi log từng request ở level `debug`** (mặc định `info` = chỉ log lúc khởi động). Bật debug để có log request cho web:
 > ```bash
 > kubectl -n smartapp set env deploy/web PODINFO_LEVEL=debug
 > ```
