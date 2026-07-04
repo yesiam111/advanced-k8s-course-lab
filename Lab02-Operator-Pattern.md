@@ -18,7 +18,7 @@ kubebuilder init --domain smartapp.io --repo smartapp.io/webapp-operator
 kubebuilder create api --group web --version v1 --kind WebApp --resource --controller
 ```
 
-Sau bước trên, `api/v1/webapp_types.go` và `controllers/webapp_controller.go` đã được điền **phần khung** (xem dưới). `WebAppSpec/Status` và phần thân `Reconcile` để trống có chủ đích cho học viên hoàn thiện.
+Sau bước trên, `api/v1/webapp_types.go` và `internal/controller/webapp_controller.go` đã được điền **phần khung** (xem dưới). `WebAppSpec/Status` và phần thân `Reconcile` để trống có chủ đích cho học viên hoàn thiện.
 
 `api/v1/webapp_types.go` (đã điền sẵn spec/status):
 ```go
