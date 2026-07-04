@@ -3,7 +3,7 @@
 > Hệ thống xuyên suốt: **smartapp** (web = podinfo). Lab này dựng full stack quan sát rồi dùng nó để điều tra một sự cố mô phỏng.
 > podinfo expose sẵn `/metrics` (Prometheus), ghi log có cấu trúc, hỗ trợ tracing và có endpoint tự gây lỗi/độ trễ (`/status/{code}`, `/delay/{sec}`) — rất tiện cho bài này.
 
-**Thời lượng:** ~120 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm` ≥ 3.12, cụm có Internet (pull Helm charts) hoặc registry nội bộ. Có sẵn namespace `smartapp` với deployment `web` (podinfo) từ Bài 01.
+**Thời lượng:** ~60 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm` ≥ 3.12, cụm có Internet (pull Helm charts) hoặc registry nội bộ. Có sẵn namespace `smartapp` với deployment `web` (podinfo) từ Bài 01.
 
 > 🧑‍🏫 **Ghi chú nhịp độ (giảng viên):** cài stack bằng Helm rất nhanh trên cụm có sẵn → bài này thường **xong sớm**. Dồn thời gian cho BT4 (tương quan) và phần (Nâng cao). Nếu Internet hạn chế, chuẩn bị trước các chart đã mirror.
 
@@ -52,21 +52,27 @@ EOF
 ```
 > Lưu ý: service `web` cần có port tên `http`. Nếu chưa, sửa: `kubectl -n smartapp patch svc web --type=json -p '[{"op":"add","path":"/spec/ports/0/name","value":"http"}]'`.
 
+Sinh tải để có số liệu:
+```bash
+kubectl -n smartapp run load --rm -it --image=busybox --restart=Never -- \
+  sh -c 'for i in $(seq 1 20000); do wget -q -O- http://web.smartapp:9898/ >/dev/null; done'
+```
+
 Mở Grafana và truy vấn PromQL:
 ```bash
-kubectl -n monitoring port-forward svc/kps-grafana 3000:80
+kubectl -n monitoring port-forward svc/kps-grafana 3000:80 --address 0.0.0.0
 # Trình duyệt: http://localhost:3000  (admin / smartapp123)
 ```
 Trong Grafana → Explore (data source Prometheus), chạy:
+- Request rate trong 5 phút gần nhất
 ```promql
 rate(http_requests_total{app="web"}[5m])
+```
+- P99 của thời gian phục vụ http request
+```promql
 histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{app="web"}[5m])) by (le))
 ```
-**Kết quả mong đợi:** thấy đồ thị tốc độ request và p99 latency của podinfo. Sinh tải để có số liệu:
-```bash
-kubectl -n smartapp run load --rm -it --image=busybox --restart=Never -- \
-  sh -c 'for i in $(seq 1 2000); do wget -q -O- http://web.smartapp:9898/ >/dev/null; done'
-```
+**Kết quả mong đợi:** thấy đồ thị tốc độ request và p99 latency của podinfo.
 
 **Checkpoint:** dựng một dashboard nhỏ 4 panel golden signals (traffic, error, latency, saturation) cho web.
 
