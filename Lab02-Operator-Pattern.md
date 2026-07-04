@@ -5,8 +5,6 @@
 
 **Thời lượng:** ~60 phút · **Yêu cầu:** Go ≥ 1.21, `kubebuilder` ≥ 4.x, `make`, Docker, quyền `kubectl` vào cụm. Kiến thức Go cơ bản.
 
-> 🧑‍🏫 **Ghi chú timebox (giảng viên):** **Phát sẵn repo đã scaffold** (mục 0 đã chạy trước) để học viên vào thẳng BT2 (viết Reconcile). Không bắt học viên chạy `kubebuilder init` tại lớp trừ khi còn nhiều thời gian. Có lời giải mẫu ở cuối — nếu một học viên kẹt quá 25', đưa lời giải để không trễ cả lớp.
-
 ---
 
 ## 0. Repo scaffold sẵn
