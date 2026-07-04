@@ -1,0 +1,75 @@
+# Grafana Alloy — agent hợp nhất cho Lab 03 (logs -> Loki, traces OTLP -> Tempo)
+# Dùng: helm install alloy grafana/alloy -n monitoring -f alloy-values.yaml
+# Lưu ý cú pháp River: MỖI thuộc tính một dòng.
+alloy:
+  configMap:
+    content: |
+      // ---- LOGS: thu log mọi pod -> Loki ----
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+      }
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+      loki.write "default" {
+        endpoint {
+          url = "http://loki:3100/loki/api/v1/push"
+        }
+      }
+
+      // ---- TRACES: nhận OTLP -> Tempo ----
+      otelcol.receiver.otlp "in" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          traces = [otelcol.exporter.otlp.tempo.input]
+          logs   = [otelcol.exporter.loki.default.input]
+        }
+      }
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.monitoring:4317"
+          tls {
+            insecure = true
+          }
+        }
+      }
+      // podinfo cũng gửi LOG qua OTLP -> nhận và forward vào Loki
+      // (không cấu hình 'logs' -> lỗi "Unimplemented ... LogsService")
+      otelcol.exporter.loki "default" {
+        forward_to = [loki.write.default.receiver]
+      }
+  # Mở cổng OTLP trên Service của Alloy để podinfo gửi trace vào
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
