@@ -152,8 +152,8 @@ sum by (pod) (count_over_time({app="web"} |= "error" [5m]))
 helm install tempo grafana/tempo -n monitoring
 ```
 Cho **cùng Alloy** ở BT2 nhận OTLP và chuyển tiếp về Tempo — bổ sung vào `alloy-values.yaml`: thêm 2 khối vào `configMap.content` và mở cổng OTLP trên Service, rồi `helm upgrade`.
+- Thêm vào cuối configMap.content (mỗi thuộc tính một dòng)
 ```river
-# thêm vào cuối configMap.content (mỗi thuộc tính một dòng)
 otelcol.receiver.otlp "in" {
   grpc {
     endpoint = "0.0.0.0:4317"
@@ -178,8 +178,9 @@ otelcol.exporter.loki "default" {
   forward_to = [loki.write.default.receiver]
 }
 ```
+
+- Thêm vào cùng cấp `alloy:` trong alloy-values.yaml
 ```yaml
-# thêm vào cùng cấp `alloy:` trong alloy-values.yaml
 alloy:
   extraPorts:
     - { name: otlp-grpc, port: 4317, targetPort: 4317, protocol: TCP }
