@@ -108,6 +108,11 @@ kubectl logs job/kube-bench | grep -E '\[FAIL\]|\[WARN\]' | head -20
 ```
 **Kết quả mong đợi:** danh sách phát hiện FAIL/WARN theo CIS; chọn 1–2 mục và thảo luận cách khắc phục.
 
+```bash
+## install trivy nếu chưa có
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+```
+
 Quét image podinfo với Trivy:
 ```bash
 # Bản CLI nhanh (nếu có trivy)
@@ -122,7 +127,7 @@ trivy image --scanners vuln,secret,misconfig stefanprodan/podinfo:6.14.0
 
 ---
 
-## 4. BT4 — Secrets (Vault + ESO) & Tenant cô lập
+## 4. BT4 — Secrets (Vault + ESO) & Tenant isolation
 
 ### 4a. Vault (dev) + External Secrets Operator
 ```bash
