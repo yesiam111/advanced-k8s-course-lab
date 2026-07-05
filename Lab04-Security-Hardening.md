@@ -8,7 +8,7 @@
 
 ---
 
-## 1. BT1 — Cứng hóa pod `web` (securityContext)
+## 1. BT1 — Hardening pod `web` (securityContext)
 
 Trước tiên xem podinfo hiện chạy thế nào:
 ```bash
@@ -25,7 +25,7 @@ spec:
         runAsUser: 65532
         seccompProfile: { type: RuntimeDefault }
       containers:
-      - name: web
+      - name: podinfo
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -49,24 +49,22 @@ kubectl -n smartapp patch deploy web --type=json -p '[
 ## 2. BT2 — Thực thi chính sách bằng Kyverno
 
 ```bash
-helm repo add kyverno https://kyverno.github.io/kyverno/ && helm repo update
-helm install kyverno kyverno/kyverno -n kyverno --create-namespace
-kubectl -n kyverno get pods
+kubectl apply --server-side -f https://github.com/kyverno/kyverno/releases/download/v1.16.2/install.yaml
 ```
 Áp hai policy (enforce):
-> ⚠️ **Phiên bản Kyverno:** từ Kyverno 1.13, `spec.validationFailureAction` ở cấp spec đã **deprecated** — chuyển xuống mỗi rule: `validate.failureAction: Enforce`. Bản dưới (spec-level) vẫn chạy nhưng in cảnh báo trên Kyverno mới; nếu lớp dùng Kyverno ≥ 1.13, chuyển `failureAction` vào trong `validate`.
+
 ```bash
 kubectl apply -f - <<'EOF'
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata: { name: require-non-root }
 spec:
-  validationFailureAction: Enforce
   background: false
   rules:
   - name: check-non-root
     match: { any: [{ resources: { kinds: [Pod], namespaces: [smartapp] } }] }
     validate:
+      failureAction: Enforce
       message: "Container phải chạy non-root."
       pattern: { spec: { securityContext: { runAsNonRoot: "true" } } }
 ---
@@ -74,11 +72,11 @@ apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata: { name: disallow-privileged }
 spec:
-  validationFailureAction: Enforce
   rules:
   - name: no-privileged
     match: { any: [{ resources: { kinds: [Pod] } }] }
     validate:
+      failureAction: Enforce
       message: "Không cho phép privileged container."
       pattern:
         spec:
@@ -89,9 +87,9 @@ EOF
 Kiểm thử bị chặn:
 ```bash
 # Privileged -> bị từ chối
-kubectl -n smartapp run bad --image=stefanprodan/podinfo:6.7.0 --privileged
+kubectl -n smartapp run bad --image=stefanprodan/podinfo:6.14.0 --privileged
 # Thiếu runAsNonRoot -> bị từ chối
-kubectl -n smartapp run bad2 --image=stefanprodan/podinfo:6.7.0
+kubectl -n smartapp run bad2 --image=stefanprodan/podinfo:6.14.0
 ```
 **Kết quả mong đợi:** cả hai lệnh bị Kyverno từ chối kèm message. Pod `web` đã hardened ở BT1 vẫn chạy.
 
@@ -100,7 +98,7 @@ kubectl -n smartapp run bad2 --image=stefanprodan/podinfo:6.7.0
 
 ---
 
-## 3. BT3 — Quét tư thế: kube-bench & Trivy
+## 3. BT3 — Scan: kube-bench & Trivy
 
 CIS benchmark với kube-bench:
 ```bash
@@ -113,9 +111,9 @@ kubectl logs job/kube-bench | grep -E '\[FAIL\]|\[WARN\]' | head -20
 Quét image podinfo với Trivy:
 ```bash
 # Bản CLI nhanh (nếu có trivy)
-trivy image stefanprodan/podinfo:6.7.0 --severity HIGH,CRITICAL
+trivy image stefanprodan/podinfo:6.14.0 --severity HIGH,CRITICAL
 # hoặc quét cấu hình + secret
-trivy image --scanners vuln,secret,misconfig stefanprodan/podinfo:6.7.0
+trivy image --scanners vuln,secret,misconfig stefanprodan/podinfo:6.14.0
 ```
 **Kết quả mong đợi:** báo cáo CVE theo mức; thảo luận: vá bằng cách nâng base image / đổi tag.
 
@@ -138,7 +136,30 @@ Tạo secret trong Vault và đồng bộ về K8s:
 ```bash
 kubectl -n vault exec -it vault-0 -- vault kv put secret/smartapp/web api_key="s3cr3t-from-vault"
 
-# (Cấu hình SecretStore trỏ tới Vault — xem README chart; rút gọn ở đây)
+# (Cấu hình SecretStore trỏ tới Vault — xem README chart)
+kubectl -n smartapp create secret generic vault-token \
+  --from-literal=token=root
+
+kubectl apply -f - <<'EOF'
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: vault-backend
+  namespace: smartapp
+spec:
+  provider:
+    vault:
+      server: "http://vault.vault.svc:8200"
+      path: "secret"          # KV mount
+      version: "v2"           # dev mode = KV v2
+      auth:
+        tokenSecretRef:
+          name: vault-token
+          key: token
+EOF
+
+# Tạo external secret -> sync thành k8s secret
+
 kubectl apply -f - <<'EOF'
 apiVersion: external-secrets.io/v1     # v1 đã GA; v1beta1 cũ vẫn chạy nhưng nên dùng v1
 kind: ExternalSecret
@@ -221,10 +242,3 @@ kubectl label ns smartapp pod-security.kubernetes.io/enforce- 2>/dev/null || tru
 - Bạn đã áp phòng thủ nhiều lớp: hardening pod, enforce policy (Kyverno/PSA), quét (kube-bench/Trivy), secrets ngoài cụm (Vault/ESO), và tenant cô lập.
 - Điểm cốt lõi: chuyển bảo mật từ "tự giác" sang "được thực thi tự động".
 - **Bài 05:** mạng nâng cao & service mesh — default-deny NetworkPolicy bạn vừa tạo sẽ được nâng lên L7 với Cilium, cùng mTLS giữa các service.
-
-### Checklist hoàn thành
-- [ ] Pod `web` chạy non-root + read-only fs + drop ALL caps + seccomp RuntimeDefault.
-- [ ] Kyverno chặn pod privileged và pod không non-root.
-- [ ] Chạy được kube-bench (CIS) và Trivy; đọc và hiểu phát hiện.
-- [ ] ESO đồng bộ secret từ Vault thành K8s Secret cho web.
-- [ ] tenant-a có Quota + LimitRange + default-deny NetworkPolicy + PSA restricted.
