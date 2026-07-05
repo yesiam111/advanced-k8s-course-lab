@@ -174,7 +174,6 @@ otelcol.exporter.otlp "tempo" {
     }
   }
 }
-# podinfo gửi cả LOG qua OTLP -> nhận và forward vào Loki (nếu thiếu sẽ lỗi Unimplemented LogsService)
 otelcol.exporter.loki "default" {
   forward_to = [loki.write.default.receiver]
 }
