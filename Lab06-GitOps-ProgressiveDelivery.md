@@ -5,25 +5,26 @@
 
 **Thời lượng:** ~150 phút (trải buổi 6 + đầu buổi 7) · **Yêu cầu:** `kubectl` cluster-admin, `helm`, một Git repo (GitHub/GitLab nội bộ), `kubectl-argo-rollouts` plugin.
 
-> 🧑‍🏫 **Nhịp độ (giảng viên):** BT4 (auto-rollback) là điểm nhấn — chừa đủ thời gian. Nếu thiếu Git ngoài, dùng Gitea nội bộ. (Nâng cao) multi-cluster để lấp nếu lớp nhanh.
-
 ---
 
 ## 1. BT1 — Tổ chức cấu hình với Kustomize
 
-Tạo repo `smartapp-gitops` với cấu trúc:
+Repo `smartapp-gitops` đã được **trainer chuẩn bị sẵn** (web = podinfo), có 2 phiên bản đóng tag:
+
+- tag `v1` — podinfo **6.13.0** (phiên bản khởi đầu, cũng là nhánh `main`)
+- tag `v2` — podinfo **6.14.0** (phiên bản nâng cấp ở BT sau)
+
+Cấu trúc:
 ```
 base/
   deployment.yaml      # web = podinfo
   service.yaml
   kustomization.yaml
 overlays/
-  staging/kustomization.yaml      # replicas 2, tag 6.14.0
-  production/kustomization.yaml   # replicas 5, tag 6.14.0
-```
-`base/kustomization.yaml`:
-```yaml
-resources: [deployment.yaml, service.yaml]
+  staging/kustomization.yaml      # replicas 2
+  production/kustomization.yaml   # replicas 5
+argocd/
+  smartapp-staging.yaml           # Application mẫu (đổi repoURL)
 ```
 `overlays/production/kustomization.yaml`:
 ```yaml
@@ -32,10 +33,19 @@ namespace: smartapp
 replicas:
 - { name: web, count: 5 }
 images:
-- { name: web, newName: stefanprodan/podinfo, newTag: "6.14.0" }
+- { name: web, newName: stefanprodan/podinfo, newTag: "6.13.0" }
 ```
-Kiểm tra render: `kubectl kustomize overlays/production`
-**Kết quả mong đợi:** manifest production có 5 replica; staging có 2. Commit & push lên Git.
+> **Lưu ý:** `images.name: web` khớp theo *tên container* `web` trong base — nếu đổi tên container thì phải đổi cả ở đây.
+
+**Các bước:**
+
+1. **Fork** repo gốc của trainer về tài khoản GitHub/GitLab của bạn (fork công khai để ArgoCD đọc được, khỏi cần token). Không cần `git clone` hay CLI.
+2. Trong fork, mở `argocd/smartapp-staging.yaml` bằng **Web IDE** và đổi `repoURL` thành fork của bạn.
+3. (Tuỳ chọn) Kiểm tra render trên máy trainer: `kubectl kustomize overlays/production` → kỳ vọng 5 replica; `overlays/staging` → 2 replica.
+
+**Kết quả mong đợi:** bạn có fork riêng ở podinfo 6.13.0; mọi thay đổi ở BT sau đều commit qua Web IDE ngay trên trình duyệt.
+
+> **Trainer** dựng repo gốc 1 lần bằng `./scaffold-smartapp-gitops.sh` rồi `git push -u origin main --tags` lên remote công khai.
 
 ---
 
@@ -55,9 +65,9 @@ metadata: { name: smartapp-staging, namespace: argocd }
 spec:
   project: default
   source:
-    repoURL: https://git.example/smartapp-gitops
+    repoURL: https://github.com/<YOUR-USER>/smartapp-gitops.git   # ĐỔI thành fork của bạn
     path: overlays/staging
-    targetRevision: main
+    targetRevision: main        # hoặc pin tag: v1 (cũ) -> v2 (mới)
   destination:
     server: https://kubernetes.default.svc
     namespace: smartapp-staging
@@ -179,7 +189,7 @@ kubectl argo rollouts get rollout web -n smartapp --watch
 > ⚠️ **web hiện là `Rollout`, không còn `Deployment`** — các lệnh `deploy/web` của Bài 07 sẽ lỗi. Trước Bài 07, chọn một trong hai:
 
 ```bash
-# (a) Đơn giản nhất: reset về baseline (nhớ cài lại Prometheus trước Bài 07 nếu cần)
+# (a) Đơn giản nhất: reset về baseline (cài lại Prometheus trước Bài 07 nếu cần)
 ./graders/reset.sh smartapp
 
 # (b) Giữ cụm, chỉ chuyển web về Deployment:
@@ -195,9 +205,3 @@ kubectl -n smartapp delete pod errgen --ignore-not-found
 - Bạn đã xây pipeline GitOps đầy đủ: Git → ArgoCD (staging, self-heal) → Argo Rollouts canary (production) với cổng metrics tự rollback.
 - Đây là đỉnh tổng hợp: reconcile (Bài 02) + Prometheus (Bài 03) + canary (Bài 05) hợp lại.
 - **Bài 07:** tự động mở rộng quy mô & hiệu suất — VPA, KEDA, Cluster Autoscaler, custom metrics và lập lịch nâng cao.
-
-### Checklist hoàn thành
-- [ ] smartapp có base + overlay staging/production (Kustomize) trong Git.
-- [ ] ArgoCD đồng bộ staging; self-heal hoàn tác drift.
-- [ ] Argo Rollouts canary promote khi success-rate ≥ 95%.
-- [ ] Bản lỗi bị auto-rollback nhờ cổng phân tích Prometheus.

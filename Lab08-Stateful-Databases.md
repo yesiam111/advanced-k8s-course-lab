@@ -3,30 +3,11 @@
 > Hệ thống xuyên suốt: **smartapp**. Lab này dựng và bảo vệ **postgres** của smartapp bằng CloudNativePG, snapshot và Velero.
 > **Giả định:** cụm có **Longhorn** với StorageClass mặc định `longhorn` (hỗ trợ CSI snapshot — xem `provision/`).
 
-**Thời lượng:** ~150 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, StorageClass có hỗ trợ snapshot; (BT4) một S3 bucket hoặc MinIO nội bộ cho Velero.
-
-> 🧑‍🏫 **Nhịp độ:** BT2 (CNPG failover) và BT3 (PITR) là điểm nhấn. BT4 (Velero) cần S3/MinIO — chuẩn bị trước. Nếu thiếu giờ, demo PITR/Velero.
+**Thời lượng:** ~60 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, StorageClass có hỗ trợ snapshot; (BT4) một S3 bucket hoặc MinIO nội bộ cho Velero.
 
 ---
 
-## 1. BT1 — OverlayFS: chứng minh container ephemeral
-
-```bash
-# Ghi dữ liệu vào filesystem container (KHÔNG có volume)
-kubectl -n smartapp run ephemeral --image=busybox --restart=Never -- sh -c 'echo "du-lieu-quan-trong" > /data.txt; sleep 3600'
-kubectl -n smartapp exec ephemeral -- cat /data.txt     # thấy dữ liệu
-# Xóa pod → tạo lại
-kubectl -n smartapp delete pod ephemeral
-kubectl -n smartapp run ephemeral --image=busybox --restart=Never -- sh -c 'cat /data.txt 2>/dev/null || echo "MẤT DỮ LIỆU"; sleep 3600'
-kubectl -n smartapp logs ephemeral
-```
-**Kết quả mong đợi:** lần hai in `MẤT DỮ LIỆU` — layer ghi ephemeral biến mất cùng container. Đây là lý do DB cần PersistentVolume.
-
-Dọn dẹp: `kubectl -n smartapp delete pod ephemeral`
-
----
-
-## 2. BT2 — PostgreSQL bằng CloudNativePG (+ failover)
+## 1. BT2 — PostgreSQL bằng CloudNativePG (+ failover)
 
 > ⚠️ **Phiên bản:** URL dưới ghim CNPG 1.24 (cũ). Trước buổi, kiểm tra release ổn định mới nhất tại https://github.com/cloudnative-pg/cloudnative-pg/releases và thay `release-1.24`/`cnpg-1.24.0.yaml` cho khớp (API `postgresql.cnpg.io/v1` ổn định giữa các bản).
 ```bash
@@ -104,8 +85,23 @@ kubectl -n smartapp exec -it smartapp-db-restored-1 -- psql -c "SELECT * FROM t;
 
 ## 4. BT4 — Velero: backup & restore xuyên namespace
 
+> **Object store OFF-CLUSTER (bắt buộc trước khi cài Velero).** Backup nằm trong chính cụm mà
+> nó bảo vệ thì không phải backup (Bài 01). Ta dựng **MinIO 1 instance standalone** do **containerd
+> quản lý trực tiếp qua nerdctl** — KHÔNG phải workload K8s — ở containerd namespace riêng `dr-store`
+> (KHÔNG phải `k8s.io` của kubelet), nên `kubectl` không thấy và xoá cụm vẫn còn store.
+>
+> ```bash
+> # TRÊN 1 node cụm (có containerd). KHÔNG cần sudo cả lệnh — script tự sudo phần chạm containerd.
+> ./provision/minio-dr-host.sh up      # in ra endpoint http://<NODE_IP>:9000 + bucket 'velero'
+> ./provision/minio-dr-host.sh status  # lấy lại thông tin nối Velero bất kỳ lúc nào
+> # Kiểm chứng nó KHÔNG thuộc K8s:
+> #   sudo ctr -n k8s.io   c ls   # pod của kubelet   |   sudo ctr -n dr-store c ls   # MinIO
+> ```
+> Thay `s3Url` bên dưới bằng `http://<NODE_IP>:9000` mà script in ra (KHÔNG dùng `minio.velero:9000`
+> nội cụm nữa). ⚠ Off-cluster nhưng vẫn on-host: production đặt MinIO trên máy/khu vực tách rời.
+
 ```bash
-# Cài Velero (ví dụ với MinIO nội bộ làm S3)
+# Cài Velero (S3 = MinIO OFF-CLUSTER ở trên; đổi s3Url thành http://<NODE_IP>:9000)
 # ⚠ Snapshotter 'aws' KHÔNG snapshot được PV Longhorn — backup dữ liệu volume bằng
 #   file-system backup (node-agent/Kopia). Muốn dùng CSI snapshot thật: thêm
 #   --features=EnableCSI + VolumeSnapshotClass (longhorn-snapshot-vsc).
@@ -113,7 +109,8 @@ kubectl -n smartapp exec -it smartapp-db-restored-1 -- psql -c "SELECT * FROM t;
 velero install \
   --provider aws --plugins velero/velero-plugin-for-aws:v1.10.0 \
   --bucket velero --secret-file ./minio-creds \
-  --backup-location-config region=minio,s3ForcePathStyle=true,s3Url=http://minio.velero:9000 \
+  --backup-location-config region=minio,s3ForcePathStyle=true,s3Url=http://<NODE_IP>:9000,checksumAlgorithm= \
+  # ⚠ checksumAlgorithm= (rỗng) BẮT BUỘC với MinIO + plugin aws ≥1.9, nếu không BSL 'Unavailable'.
   --use-volume-snapshots=false \
   --use-node-agent --default-volumes-to-fs-backup
 
