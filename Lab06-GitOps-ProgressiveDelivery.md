@@ -3,13 +3,13 @@
 > Hệ thống xuyên suốt: **smartapp** (web = podinfo). Lab này xây pipeline GitOps hoàn chỉnh: Git → ArgoCD (staging) → Argo Rollouts canary (production) có cổng phân tích metrics.
 > **Phụ thuộc:** Prometheus (Bài 03) phải đang chạy để cổng phân tích truy vấn.
 
-**Thời lượng:** ~150 phút (trải buổi 6 + đầu buổi 7) · **Yêu cầu:** `kubectl` cluster-admin, `helm`, một Git repo (GitHub/GitLab nội bộ), `kubectl-argo-rollouts` plugin.
+**Thời lượng:** ~60 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, một Git repo (GitHub/GitLab nội bộ), `kubectl-argo-rollouts` plugin.
 
 ---
 
 ## 1. BT1 — Tổ chức cấu hình với Kustomize
 
-Repo `smartapp-gitops` đã được **trainer chuẩn bị sẵn** (web = podinfo), có 2 phiên bản đóng tag:
+Repo `smartapp-gitops` (https://github.com/yesiam111/smartapp-gitops) (web = podinfo), có 2 phiên bản đóng tag:
 
 - tag `v1` — podinfo **6.13.0** (phiên bản khởi đầu, cũng là nhánh `main`)
 - tag `v2` — podinfo **6.14.0** (phiên bản nâng cấp ở BT sau)
