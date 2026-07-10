@@ -4,8 +4,6 @@
 
 **Thời lượng:** ~150 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, cụm có Internet; có namespace `smartapp` + deployment `web` từ Bài 01.
 
-> 🧑‍🏫 **Nhịp độ (giảng viên):** BT1–BT2 là cốt lõi. BT3 nhanh (chạy scanner). BT4 (Vault/ESO) dài nhất — nếu thiếu giờ thì demo phần ESO+Vault, học viên tự làm phần tenant (Quota/LimitRange/NetworkPolicy). Phần (Nâng cao) để lấp nếu lớp nhanh.
-
 ---
 
 ## 1. BT1 — Hardening pod `web` (securityContext)
