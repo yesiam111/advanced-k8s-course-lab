@@ -2,7 +2,7 @@
 
 > Hệ thống xuyên suốt: **smartapp** (web = podinfo). Lab này áp phòng thủ nhiều lớp lên smartapp và dựng một tenant namespace an toàn.
 
-**Thời lượng:** ~150 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, cụm có Internet; có namespace `smartapp` + deployment `web` từ Bài 01.
+**Thời lượng:** ~60 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, cụm có Internet; có namespace `smartapp` + deployment `web` từ Bài 01.
 
 ---
 
@@ -12,7 +12,7 @@ Trước tiên xem podinfo hiện chạy thế nào:
 ```bash
 kubectl -n smartapp get pod -l app=web -o jsonpath='{.items[0].spec.containers[0].securityContext}{"\n"}'
 ```
-Áp securityContext "mẫu vàng":
+Áp securityContext "Golden template":
 ```bash
 kubectl -n smartapp patch deploy web -p '
 spec:
@@ -33,7 +33,7 @@ kubectl -n smartapp rollout status deploy/web
 ```
 **Kết quả mong đợi:** pod chạy lại thành công với non-root + read-only fs.
 
-> ⚠️ Nếu pod `CrashLoopBackOff` vì `readOnlyRootFilesystem`: ứng dụng cần ghi tạm. Khắc phục đúng cách là mount `emptyDir` vào thư mục cần ghi (vd `/tmp`, `/data`) thay vì tắt read-only:
+> ⚠️ Nếu pod `CrashLoopBackOff` vì `readOnlyRootFilesystem`: ứng dụng cần ghi file tạm. Khắc phục đúng cách là mount `emptyDir` vào thư mục cần ghi (vd `/tmp`, `/data`) thay vì tắt read-only:
 ```bash
 kubectl -n smartapp patch deploy web --type=json -p '[
  {"op":"add","path":"/spec/template/spec/volumes","value":[{"name":"tmp","emptyDir":{}}]},
@@ -179,9 +179,115 @@ kubectl -n smartapp get secret web-secret -o jsonpath='{.data.api_key}' | base64
 ```
 **Kết quả mong đợi:** một `Secret` K8s `web-secret` được ESO tự tạo từ Vault; giá trị khớp `s3cr3t-from-vault`.
 
-> 💡 Điểm dạy: secret KHÔNG nằm trong Git/manifest — nguồn thật ở Vault, ESO đồng bộ. ESO chính là một Operator (Bài 02).
+> 💡 secret KHÔNG nằm trong Git/manifest — nguồn thật ở Vault, ESO đồng bộ. ESO chính là một Operator (Bài 02).
 
-### 4b. Tenant namespace an toàn
+### 4b. Ký ảnh & xác minh tại admission (Cosign + Kyverno `verifyImages`)
+
+Ý tưởng: **chỉ cho chạy image ĐÃ KÝ** bởi identity tin cậy. Dùng **key-based** (khóa cục bộ) — hoạt động **offline/air-gap**, KHÔNG cần Fulcio/Rekor. **Private key** ở lại host ký (CI/giảng viên); chỉ **public key** vào cluster để xác minh. (Nếu cụm có Internet tới Sigstore, xem biến thể **keyless** ở cuối mục.)
+
+> 💡 Vì sao tách vai trò? Người *ký* (giữ private key) khác người *dùng* (cluster chỉ có public key). Cluster verify được nhưng không tự ký → workload bị chiếm cũng không qua được policy.
+
+**Cài cosign + crane nếu chưa có:**
+```bash
+curl -fsSL -o cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+sudo install -m 0755 cosign /usr/local/bin/cosign && rm -f cosign
+
+# Fetch the latest version tag name
+VERSION=$(curl -s "https://api.github.com/repos/google/go-containerregistry/releases/latest" | jq -r '.tag_name')
+
+# Download the unified tarball archive (Notice the prefix 'go-containerregistry_')
+curl -sL "https://github.com/google/go-containerregistry/releases/download/${VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | sudo tar -zxvf - -C /usr/local/bin/ crane
+```
+
+**0) Ký 1 lần (giảng viên / CI thực hiện).** Tạo keypair rồi copy podinfo vào registry cụm PULL được và ký (chữ ký đẩy vào chính registry). `$REGISTRY` = registry cụm pull được & host này push được:
+```bash
+export REGISTRY=docker.io/jeffvn
+export COSIGN_PASSWORD=""                       # key không mật khẩu cho lab
+cosign generate-key-pair                        # -> cosign.key (PRIVATE, giữ lại), cosign.pub (PUBLIC, vào cluster)
+crane copy ghcr.io/stefanprodan/podinfo:6.14.0 $REGISTRY/podinfo:6.14.0-signed
+
+# ⚠ Ký bằng cosign 2.x — BẮT BUỘC để có định dạng chữ ký "legacy" (tag sha256-<digest>.sig)
+#   mà Kyverno đọc được. cosign 3.x với --signing-config ép "new bundle format" → Kyverno
+#   báo 'no signatures found'; mà 3.x lại không cho legacy + offline cùng lúc. Nên dùng 2.x để ký.
+#   (Cài cosign2 song song, không đụng cosign 3.x hiện có.)
+COSIGN2_VERSION=v2.4.3
+curl -fsSL -o cosign2 https://github.com/sigstore/cosign/releases/download/${COSIGN2_VERSION}/cosign-linux-amd64
+sudo install -m 0755 cosign2 /usr/local/bin/cosign2 && rm -f cosign2
+
+# Ký, KHÔNG upload transparency log (offline), định dạng legacy:
+cosign2 sign --key cosign.key --tlog-upload=false --yes $REGISTRY/podinfo:6.14.0-signed
+crane ls $REGISTRY/podinfo | grep sig            # kiểm tra có tag sha256-....sig (định dạng Kyverno đọc)
+
+# Kiểm chứng offline (không gọi Rekor):
+cosign2 verify --key cosign.pub --insecure-ignore-tlog=true $REGISTRY/podinfo:6.14.0-signed
+```
+> 🛠️ For trainer: Helper `./graders/prep04-keybased.sh` làm trọn bước này (tạo keypair, copy+ký image) và export `REGISTRY`, `SIGNED_IMAGE`, `COSIGN_PUBKEY_FILE` vào `~/.bashrc` để các lệnh 4b ở terminal mới tự có. *(Chỉ là demo của bài hướng dẫn — challenge KHÔNG chấm ký ảnh; `setup04.sh`/`grade04.sh` không liên quan tới ký ảnh.)*
+
+**1) Bắt buộc tại admission bằng Kyverno** (Audit trước để quan sát, rồi Enforce). Dán nội dung `cosign.pub` vào `publicKeys`:
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata: { name: verify-image-signatures }
+spec:
+  validationFailureAction: Enforce   # sau khi log Audit sạch: đổi 'Enforce' VÀ đặt mutateDigest: true
+  webhookTimeoutSeconds: 30
+  background: false
+  rules:
+  - name: require-signed
+    match: { any: [{ resources: { kinds: [Pod], namespaces: [smartapp] } }] }
+    verifyImages:
+    - imageReferences: ["*"]
+      required: true
+      mutateDigest: true         # ⚠ với Audit PHẢI là false; khi chuyển Enforce mới đặt true (ghim tag->digest)
+      attestors:
+      - entries:
+        - keys:
+            publicKeys: |-        # nội dung cosign.pub
+              -----BEGIN PUBLIC KEY-----
+              MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBuP8+j/jcXCaM5Y6DkEnzHBaVtbf
+              vZEzLfvJWhpiDKHm6YRJ6d0U9xRilfxy8q+rOopwjQocIrTl4vJLir+7yQ==
+              -----END PUBLIC KEY-----
+            rekor: { ignoreTlog: true }   # offline: bỏ qua transparency log
+            ctlog: { ignoreSCT: true }
+EOF
+```
+
+**2) Thử nghiệm** (pod cũng phải qua `require-non-root` ở BT2 → thêm securityContext):
+```bash
+# Image ĐÃ KÝ + non-root -> ĐƯỢC (khi Enforce)
+kubectl -n smartapp run signed --image=$REGISTRY/podinfo:6.14.0-signed --restart=Never \
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}}}'
+# Image CHƯA KÝ -> BỊ TỪ CHỐI bởi verify-image-signatures
+kubectl -n smartapp run unsigned --image=busybox --restart=Never --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}}}'  --command -- sleep 30
+```
+
+**Kết quả mong đợi:** khi `Enforce`, pod ảnh chưa ký bị admission từ chối kèm message; pod ảnh đã ký (và non-root) lên bình thường, image được ghim sang `@sha256:...`.
+
+> ⚠️ **Dọn dẹp:** `kubectl delete clusterpolicy verify-image-signatures` trước Bài 05 (nếu không sẽ chặn image chưa ký của bài sau).
+
+**Biến thể keyless (CHỈ khi cụm có Internet tới Sigstore).** Không quản lý khóa; xác minh chữ ký OIDC publisher đã ký sẵn (`ghcr.io/stefanprodan/podinfo`). Thay `attestors` bằng:
+```yaml
+      attestors:
+      - entries:
+        - keyless:
+            subject: "https://github.com/stefanprodan/*"
+            issuer: "https://token.actions.githubusercontent.com"
+            rekor: { url: "https://rekor.sigstore.dev" }
+```
+> ⚠️ Keyless cần webhook Kyverno gọi được **registry + Fulcio/Rekor** (`tuf-repo-cdn.sigstore.dev`). Nếu thấy lỗi `failed to get roots from fulcio` / `tls: unrecognized name` → cụm bị chặn egress → dùng key-based ở trên.
+
+> 🩺 **Troubleshooting — Kyverno báo `tls: unrecognized name` khi kéo chữ ký (dù node vẫn pull image được):**
+> Thường KHÔNG phải chặn egress mà là **DNS**. Node phân giải `ghcr.io`/`registry-1.docker.io` đúng, nhưng POD lại phân giải sai do `search ... lab.com` + `ndots:5` trong `/etc/resolv.conf`: tên có ít hơn 5 dấu chấm bị thử qua search-domain trước (vd `ghcr.io.lab.com`), và nếu DNS homelab trả **wildcard `*.lab.com`** thì pod nối tới IP sai → server đó từ chối SNI (`unrecognized name`).
+> Chẩn đoán nhanh: `kubectl -n kyverno run t --rm -it --image=curlimages/curl --restart=Never -- curl -sv https://ghcr.io/v2/` — xem dòng `Trying <IP>` có khác `getent hosts ghcr.io` trên node không.
+> - **Khắc phục nhanh (chỉ Kyverno):** hạ `ndots` để tên có dấu chấm được thử nguyên trạng trước search-domain:
+>   ```bash
+>   kubectl -n kyverno patch deploy kyverno-admission-controller --type merge \
+>     -p '{"spec":{"template":{"spec":{"dnsConfig":{"options":[{"name":"ndots","value":"1"}]}}}}}'
+>   ```
+> - **Gốc rễ (cả cụm):** bỏ wildcard `*.lab.com` trên DNS homelab để `<tên>.lab.com` không tồn tại trả về **NXDOMAIN** (giữ A record cho host thật). Khi `dig +short doesnotexist.lab.com` rỗng là xong.
+
+### 4c. Tenant namespace an toàn
 ```bash
 kubectl create namespace tenant-a
 kubectl label ns tenant-a pod-security.kubernetes.io/enforce=restricted
@@ -211,7 +317,34 @@ spec:
 EOF
 kubectl -n tenant-a describe resourcequota quota
 ```
-**Kết quả mong đợi:** namespace `tenant-a` có trần tài nguyên, mặc định container, default-deny mạng, và PSA restricted. Thử tạo pod vượt quota hoặc privileged để thấy bị chặn.
+**Thử các pod BỊ CHẶN (mỗi lệnh minh hoạ một lan can khác nhau):**
+```bash
+# a) PSA 'restricted' chặn pod không hardened (busybox mặc định: root, không seccomp, không drop caps)
+kubectl -n tenant-a run bad --image=busybox --restart=Never --command -- sleep 3600
+#   -> Error ... violates PodSecurity "restricted:latest": allowPrivilegeEscalation != false,
+#      unrestricted capabilities, runAsNonRoot != true, seccompProfile ...
+
+# b) PSA 'restricted' chặn pod privileged
+kubectl -n tenant-a run priv --image=busybox --restart=Never \
+  --overrides='{"spec":{"containers":[{"name":"priv","image":"busybox","securityContext":{"privileged":true}}]}}' \
+  --command -- sleep 3600
+#   -> Error ... privileged != true (hoặc bị chặn ngay ở restricted)
+
+# c) ResourceQuota chặn pod xin vượt trần (requests.cpu 5 > hard 4)
+kubectl -n tenant-a run toobig --image=busybox --restart=Never \
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"toobig","image":"busybox","command":["sh","-c","sleep 3600"],"resources":{"requests":{"cpu":"5"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
+#   -> Error ... exceeded quota: quota, requested: requests.cpu=5, limited: requests.cpu=4
+```
+
+**Pod TUÂN THỦ thì được (đối chứng):**
+```bash
+kubectl -n tenant-a run good --image=busybox --restart=Never \
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"good","image":"busybox","command":["sh","-c","sleep 3600"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
+kubectl -n tenant-a get pod good        # Running; LimitRange tự gán requests/limits mặc định
+kubectl -n tenant-a delete pod good bad priv toobig --ignore-not-found
+```
+
+**Kết quả mong đợi:** namespace `tenant-a` có trần tài nguyên, mặc định container, default-deny mạng, và PSA restricted. Pod `bad`/`priv` bị **PSA restricted** chặn, `toobig` bị **ResourceQuota** chặn, còn `good` (đã hardened) chạy được.
 
 **Câu hỏi suy ngẫm:** vì sao "chỉ tạo namespace" chưa đủ để cô lập một tenant? *(Gợi ý: cần thêm lan can tài nguyên, mạng, và workload.)*
 
@@ -220,7 +353,8 @@ kubectl -n tenant-a describe resourcequota quota
 ## 5. (Nâng cao — nếu còn thời gian)
 
 - **Custom seccomp:** sinh profile từ `strace`/audit của podinfo, áp `localhostProfile` thay cho RuntimeDefault.
-- **Cosign verify tại admission:** ký một image và viết Kyverno `verifyImages` chỉ cho chạy image có chữ ký.
+- **Cosign — biến thể keyless:** nếu cụm có Internet tới Sigstore, thay `keys` (mục 4b) bằng `keyless` (subject/issuer OIDC) để khỏi quản lý khóa. Xem cuối mục 4b.
+- **Cosign — attestation:** thêm `verifyImages.attestations` (vd SBOM/provenance) chứ không chỉ chữ ký.
 - **Audit logging:** bật audit policy ghi các API call nhạy cảm (exec, secret read) và cảnh báo.
 - **HNC:** cài Hierarchical Namespace Controller, tạo namespace con của `tenant-a` kế thừa quota/policy.
 
@@ -228,10 +362,10 @@ kubectl -n tenant-a describe resourcequota quota
 
 ## 6. Cleanup
 
-> ⚠️ **Bắt buộc trước bài sau:** hai ClusterPolicy đang enforce trên `smartapp` sẽ **chặn hầu hết pod demo** của Bài 05–08 (web-v2, errgen, oom/stress, filler, k6, busybox…). Pod `web` đã hardened thì giữ nguyên.
+> ⚠️ **Bắt buộc trước bài sau:** các ClusterPolicy đang enforce trên `smartapp` (require-non-root, disallow-privileged, và `verify-image-signatures` nếu bạn làm mục 4b) sẽ **chặn hầu hết pod demo** của Bài 05–08 (web-v2, errgen, oom/stress, filler, k6, busybox…). Pod `web` đã hardened thì giữ nguyên.
 
 ```bash
-kubectl delete clusterpolicy require-non-root disallow-privileged --ignore-not-found
+kubectl delete clusterpolicy require-non-root disallow-privileged verify-image-signatures --ignore-not-found
 # Nếu đã thử PSA ở phần (Nâng cao) — gỡ nhãn enforce:
 kubectl label ns smartapp pod-security.kubernetes.io/enforce- 2>/dev/null || true
 # Giữ lại: web đã hardened, Vault/ESO, tenant-a (không ảnh hưởng bài sau)
