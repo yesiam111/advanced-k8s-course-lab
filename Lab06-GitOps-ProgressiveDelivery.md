@@ -105,23 +105,33 @@ kubectl -n smartapp delete deploy web --ignore-not-found
 ```
 ```yaml
 kubectl apply -f - <<'EOF'
+kubectl apply -f - <<'EOF'
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: web, namespace: smartapp, labels: { release: kps } }   # release=kps để Prometheus (Bài 03) chọn
+spec:
+  selector: { matchLabels: { app: web } }
+  endpoints: [{ targetPort: 9898, path: /metrics, interval: 15s }]        # scrape podinfo /metrics
+---
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata: { name: success-rate, namespace: smartapp }
 spec:
   metrics:
   - name: success-rate
-    interval: 1m
-    successCondition: "len(result) > 0 && result[0] >= 0.95"
+    interval: 30s
+    count: 3                     # BẮT BUỘC cho analysis trong bước canary — thiếu 'count' ⇒ "runs indefinitely" (InvalidSpec)
+    successCondition: "len(result) > 0 && result[0] >= 0.95"   # provider Prometheus trả []float64 ⇒ dùng result[0]
     failureLimit: 1
     provider:
       prometheus:
         # ⚠️ Địa chỉ này TÙY CỤM (tên Service của Prometheus). Xác minh trên cụm của bạn:
         #   kubectl -n monitoring get svc | grep -i prometheus
         address: http://kps-kube-prometheus-stack-prometheus.monitoring:9090
+        # Lọc theo nhãn 'service' (operator TỰ gắn từ tên Service 'web') — không cần targetLabels.
         query: |
-          sum(rate(http_requests_total{app="web",status!~"5.."}[2m]))
-            / sum(rate(http_requests_total{app="web"}[2m]))
+          sum(rate(http_requests_total{service="web",status!~"5.."}[1m]))
+            / sum(rate(http_requests_total{service="web"}[1m]))
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
@@ -145,6 +155,7 @@ spec:
       - setWeight: 50
       - pause: { duration: 1m }
       - setWeight: 100
+EOF
 EOF
 ```
 Theo dõi:
