@@ -12,7 +12,7 @@
 > ⚠️ **Phiên bản:** URL dưới ghim CNPG 1.24 (cũ). Trước buổi, kiểm tra release ổn định mới nhất tại https://github.com/cloudnative-pg/cloudnative-pg/releases và thay `release-1.24`/`cnpg-1.24.0.yaml` cho khớp (API `postgresql.cnpg.io/v1` ổn định giữa các bản).
 ```bash
 kubectl apply --server-side -f \
-  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.24/releases/cnpg-1.24.0.yaml
+  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.30/releases/cnpg-1.30.0.yaml
 kubectl -n cnpg-system rollout status deploy/cnpg-controller-manager
 ```
 Dựng cluster postgres của smartapp:
@@ -107,7 +107,7 @@ kubectl -n smartapp exec -it smartapp-db-restored-1 -- psql -c "SELECT * FROM t;
 #   --features=EnableCSI + VolumeSnapshotClass (longhorn-snapshot-vsc).
 # (Kiểm tra bản plugin mới nhất trước buổi: github.com/vmware-tanzu/velero-plugin-for-aws/releases)
 velero install \
-  --provider aws --plugins velero/velero-plugin-for-aws:v1.10.0 \
+  --provider aws --plugins velero/velero-plugin-for-aws:v1.14.2 \
   --bucket velero --secret-file ./minio-creds \
   --backup-location-config region=minio,s3ForcePathStyle=true,s3Url=http://<NODE_IP>:9000,checksumAlgorithm= \
   # ⚠ checksumAlgorithm= (rỗng) BẮT BUỘC với MinIO + plugin aws ≥1.9, nếu không BSL 'Unavailable'.
@@ -145,9 +145,3 @@ kubectl -n smartapp-dr exec -it smartapp-db-1 -- psql -c "SELECT count(*) FROM t
 - Bạn đã vận hành postgres của smartapp bằng Operator (failover tự động), thực hiện PITR, và backup/restore xuyên namespace với Velero.
 - Dữ liệu stateful giờ được bảo vệ ở mức production: persistent + snapshot + backup off-site + diễn tập restore.
 - **Bài 09:** SRE, xử lý sự cố & Capstone — ghép toàn bộ khóa (gồm khôi phục dữ liệu hôm nay) thành kỹ năng vận hành và một bài tổng hợp.
-
-### Checklist hoàn thành
-- [ ] Chứng minh được container fs ephemeral (mất dữ liệu khi không có volume).
-- [ ] CNPG dựng postgres 3 instance; failover tự động khi xóa primary, dữ liệu nguyên vẹn.
-- [ ] Thực hiện PITR khôi phục về thời điểm trước khi xóa dữ liệu.
-- [ ] Velero backup namespace và restore sang namespace mới thành công.
