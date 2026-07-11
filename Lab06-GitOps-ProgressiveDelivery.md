@@ -105,7 +105,6 @@ kubectl -n smartapp delete deploy web --ignore-not-found
 ```
 ```yaml
 kubectl apply -f - <<'EOF'
-kubectl apply -f - <<'EOF'
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata: { name: web, namespace: smartapp, labels: { release: kps } }   # release=kps để Prometheus (Bài 03) chọn
@@ -155,7 +154,6 @@ spec:
       - setWeight: 50
       - pause: { duration: 1m }
       - setWeight: 100
-EOF
 EOF
 ```
 Theo dõi:
