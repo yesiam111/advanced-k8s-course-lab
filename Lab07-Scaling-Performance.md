@@ -3,7 +3,7 @@
 > Hệ thống xuyên suốt: **smartapp** (web = podinfo, redis). Lab này trải nghiệm scaling, chi phí và lập lịch nâng cao.
 > **Phụ thuộc:** Prometheus (Bài 03) đang chạy để xem metric khi scaling.
 
-**Thời lượng:** ~120 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, `k6` (hoặc chạy k6 trong pod); SSH + sudo vào 1 node cho BT1.
+**Thời lượng:** ~60 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, `k6` (hoặc chạy k6 trong pod); SSH + sudo vào 1 node cho BT1.
 
 > 🧑‍🏫 **Nhịp độ (giảng viên):** cài KEDA/OpenCost nhanh → bài dễ **xong sớm**. Dồn cho BT4 (lập lịch) và (Nâng cao). Cluster Autoscaler chỉ hoạt động trên cụm cloud/có node group — nếu cụm cố định, demo bằng cách quan sát pod `Pending`.
 
