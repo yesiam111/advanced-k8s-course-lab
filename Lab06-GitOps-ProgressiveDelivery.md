@@ -79,6 +79,18 @@ kubectl -n argocd get applications
 ```
 **Kết quả mong đợi:** Application `Synced` + `Healthy`; namespace `smartapp-staging` có web đang chạy.
 
+**Xem Argo CD UI (tùy chọn nhưng nên xem — self-heal rất trực quan ở đây):**
+```bash
+# Mật khẩu admin ban đầu
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+# Mở UI ở máy local
+kubectl -n argocd port-forward svc/argocd-server 8080:443
+```
+Mở **https://localhost:8080** → user `admin` + mật khẩu ở trên (chấp nhận cảnh báo cert self-signed).
+Bạn sẽ thấy ô Application `smartapp-staging` với trạng thái sync/health và **cây tài nguyên trực tiếp**.
+> Tùy chọn CLI: `argocd login localhost:8080 --username admin --password '<pw>' --insecure` rồi `argocd app get smartapp-staging`.
+
 Thử **self-heal** (gây drift):
 ```bash
 kubectl -n smartapp-staging scale deploy web --replicas=1
