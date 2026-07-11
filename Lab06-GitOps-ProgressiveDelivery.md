@@ -85,9 +85,9 @@ kubectl -n argocd get applications
 kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' | base64 -d; echo
 # Mở UI ở máy local
-kubectl -n argocd port-forward svc/argocd-server 8080:443
+kubectl -n argocd port-forward svc/argocd-server 8080:443 --address 0.0.0.0
 ```
-Mở **https://localhost:8080** → user `admin` + mật khẩu ở trên (chấp nhận cảnh báo cert self-signed).
+Mở **https://<server IP>:8080** → user `admin` + mật khẩu ở trên (chấp nhận cảnh báo cert self-signed).
 Bạn sẽ thấy ô Application `smartapp-staging` với trạng thái sync/health và **cây tài nguyên trực tiếp**.
 > Tùy chọn CLI: `argocd login localhost:8080 --username admin --password '<pw>' --insecure` rồi `argocd app get smartapp-staging`.
 
