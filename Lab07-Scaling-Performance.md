@@ -3,7 +3,7 @@
 > Hệ thống xuyên suốt: **smartapp** (web = podinfo, redis). Lab này trải nghiệm scaling, chi phí và lập lịch nâng cao.
 > **Phụ thuộc:** Prometheus (Bài 03) đang chạy để xem metric khi scaling.
 
-**Thời lượng:** ~120 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, `k6` (hoặc chạy k6 trong pod); SSH + sudo vào 1 node cho BT1.
+**Thời lượng:** ~60 phút · **Yêu cầu:** `kubectl` cluster-admin, `helm`, `k6` (hoặc chạy k6 trong pod); SSH + sudo vào 1 node cho BT1.
 
 > 🧑‍🏫 **Nhịp độ (giảng viên):** cài KEDA/OpenCost nhanh → bài dễ **xong sớm**. Dồn cho BT4 (lập lịch) và (Nâng cao). Cluster Autoscaler chỉ hoạt động trên cụm cloud/có node group — nếu cụm cố định, demo bằng cách quan sát pod `Pending`.
 
@@ -51,6 +51,25 @@ Dọn dẹp: `kubectl -n smartapp delete pod oom`
 helm repo add kedacore https://kedacore.github.io/charts && helm repo update
 helm install keda kedacore/keda -n keda --create-namespace
 ```
+
+> ⚠️ **Sự cố thường gặp — `INSTALLATION FAILED: ... cannot be imported into the current release`.** Nếu KEDA từng được cài bằng manifest/kustomize (`kubectl apply`) thay vì Helm, các tài nguyên cluster-scoped còn sót lại (ClusterRole, ClusterRoleBinding, ValidatingWebhookConfiguration, APIService) mang nhãn `app.kubernetes.io/managed-by: kustomize` và Helm từ chối "nhận nuôi" chúng. Dọn sạch rồi cài lại:
+> ```bash
+> # Xem tài nguyên cluster-scoped còn sót
+> kubectl get clusterrole,clusterrolebinding,validatingwebhookconfiguration,apiservice \
+>   -l app.kubernetes.io/part-of=keda-operator
+>
+> # Xóa theo nhãn + các tên xuất hiện trong thông báo lỗi
+> kubectl delete clusterrole,clusterrolebinding,validatingwebhookconfiguration,apiservice \
+>   -l app.kubernetes.io/part-of=keda-operator
+> kubectl delete clusterrole keda-operator 2>/dev/null
+> kubectl delete clusterrolebinding keda-operator 2>/dev/null
+> kubectl delete validatingwebhookconfiguration keda-admission 2>/dev/null
+>
+> # Gỡ release Helm dở dang + namespace, rồi cài lại theo hướng dẫn trên
+> helm uninstall keda -n keda 2>/dev/null
+> kubectl delete namespace keda 2>/dev/null
+> ```
+> Nếu Helm vẫn báo lỗi, thông báo sẽ nêu tên đối tượng còn sót → `kubectl delete` đúng tên đó rồi chạy lại. **Lưu ý:** giữ nguyên CRD (`scaledobjects.keda.sh`, …) — xóa CRD sẽ mất mọi ScaledObject hiện có.
 Tạo một worker giả lập (đọc/đếm job) và ScaledObject:
 ```bash
 kubectl -n smartapp create deployment worker --image=stefanprodan/podinfo:6.14.0
@@ -73,7 +92,7 @@ spec:
 EOF
 kubectl -n smartapp get deploy worker   # 0 replica khi rảnh (scale-to-zero)
 ```
-Bơm job vào Redis và xem worker bung:
+Bơm job vào Redis và xem worker tăng:
 ```bash
 kubectl -n smartapp exec deploy/redis -- sh -c 'for i in $(seq 1 100); do redis-cli RPUSH jobs "job-$i"; done'
 kubectl -n smartapp get deploy worker -w     # replica tăng theo listLength (Ctrl-C để thoát)
