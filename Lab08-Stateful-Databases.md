@@ -48,21 +48,63 @@ kubectl -n smartapp get cluster smartapp-db -w   # currentPrimary đổi sang in
 
 ## 3. BT3 — Point-in-Time Recovery (PITR)
 
-> Cần cấu hình backup/WAL archiving (barmanObjectStore tới S3/MinIO). Rút gọn các bước chính:
+> PITR cần một **object store off-cluster** để lưu WAL + base backup. Dùng chung MinIO của BT4 nhưng **bucket riêng** `cnpg-backups` (tách khỏi bucket `velero` của BT4 — backup Postgres và backup Velero không trộn lẫn).
+> **Dựng MinIO + bucket riêng** (idempotent; MinIO có sẵn thì chỉ tạo thêm bucket): `BUCKET=cnpg-backups sudo provision/minio-dr-host.sh up` — MinIO tại `http://<NODE_IP>:9000`, user/pass `minioadmin`/`minioadmin123`.
 
+**1) Bật backup liên tục (barmanObjectStore → MinIO) trên cluster `smartapp-db`.**
 ```bash
-# 1) Bật backup liên tục trên cluster (thêm spec.backup.barmanObjectStore trỏ S3)
-# 2) Ghi dữ liệu và GHI LẠI thời điểm — exec vào PRIMARY hiện tại (sau failover BT2,
-#    smartapp-db-1 có thể chỉ là replica read-only)
+NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+
+# a) Secret creds MinIO trong ns của cluster (barman đọc từ đây)
+kubectl -n smartapp create secret generic minio-creds \
+  --from-literal=ACCESS_KEY_ID=minioadmin \
+  --from-literal=ACCESS_SECRET_KEY=minioadmin123 \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# b) Thêm spec.backup.barmanObjectStore vào Cluster (patch, không đụng phần còn lại)
+kubectl -n smartapp patch cluster smartapp-db --type=merge -p "
+spec:
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backups/smartapp
+      endpointURL: http://${NODE_IP}:9000
+      s3Credentials:
+        accessKeyId:     { name: minio-creds, key: ACCESS_KEY_ID }
+        secretAccessKey: { name: minio-creds, key: ACCESS_SECRET_KEY }
+      wal: { compression: gzip }
+"
+
+# c) Chờ WAL archiving khỏe (bắt buộc trước khi base backup chạy được)
+kubectl -n smartapp wait --for=condition=ContinuousArchiving=True cluster/smartapp-db --timeout=120s
+
+# d) Tạo một base backup (mốc gốc để PITR tua WAL từ đó)
+kubectl -n smartapp apply -f - <<'EOF'
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata: { name: smartapp-bk, namespace: smartapp }
+spec:
+  cluster: { name: smartapp-db }
+  method: barmanObjectStore
+EOF
+kubectl -n smartapp wait --for=jsonpath='{.status.phase}'=completed \
+  backup.postgresql.cnpg.io/smartapp-bk --timeout=180s
+```
+> ⚠ Nếu `ContinuousArchiving` không lên `True`: kiểm tra MinIO reachable từ pod DB, bucket `cnpg-backups` tồn tại, creds đúng — `kubectl -n smartapp get cluster smartapp-db -o jsonpath='{.status.conditions}'`.
+
+**2) Ghi dữ liệu và GHI LẠI thời điểm T0** — exec vào PRIMARY hiện tại (sau failover BT2, `smartapp-db-1` có thể chỉ là replica read-only):
+```bash
 PRIMARY=$(kubectl -n smartapp get cluster smartapp-db -o jsonpath='{.status.currentPrimary}')
 kubectl -n smartapp exec -it $PRIMARY -- psql -c "INSERT INTO t VALUES (2),(3);"
 date -u +"%Y-%m-%dT%H:%M:%SZ"     # T0 — ghi nhớ mốc này
-# 3) "Lỡ tay" xóa dữ liệu
+```
+**3) "Lỡ tay" xóa dữ liệu:**
+```bash
 kubectl -n smartapp exec -it $PRIMARY -- psql -c "DELETE FROM t;"
 ```
 Khôi phục về thời điểm T0 bằng một Cluster mới `recovery`:
 ```bash
-kubectl apply -f - <<'EOF'
+NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+kubectl apply -f - <<EOF
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata: { name: smartapp-db-restored, namespace: smartapp }
@@ -75,8 +117,16 @@ spec:
       recoveryTarget: { targetTime: "<T0>" }   # thay bằng mốc đã ghi
   externalClusters:
   - name: smartapp-db
-    barmanObjectStore: { destinationPath: s3://backups/smartapp, ... }
+    barmanObjectStore:
+      serverName: smartapp-db                    # trỏ đúng thư mục backup của cluster nguồn
+      destinationPath: s3://cnpg-backups/smartapp
+      endpointURL: http://${NODE_IP}:9000
+      s3Credentials:
+        accessKeyId:     { name: minio-creds, key: ACCESS_KEY_ID }
+        secretAccessKey: { name: minio-creds, key: ACCESS_SECRET_KEY }
+      wal: { compression: gzip }
 EOF
+kubectl -n smartapp wait --for=condition=Ready cluster/smartapp-db-restored --timeout=360s
 kubectl -n smartapp exec -it smartapp-db-restored-1 -- psql -c "SELECT * FROM t;"
 ```
 **Kết quả mong đợi:** cluster khôi phục có lại các dòng `1,2,3` (trạng thái tại T0, trước khi DELETE). PITR mạnh hơn ảnh chụp định kỳ vì khôi phục đúng thời điểm.
