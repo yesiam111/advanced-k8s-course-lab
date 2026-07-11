@@ -104,6 +104,7 @@ Chuyển web (production) sang `Rollout` với phân tích Prometheus.
 kubectl -n smartapp delete deploy web --ignore-not-found
 ```
 ```yaml
+kubectl apply -f - <<'EOF'
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata: { name: success-rate, namespace: smartapp }
@@ -144,6 +145,7 @@ spec:
       - setWeight: 50
       - pause: { duration: 1m }
       - setWeight: 100
+EOF
 ```
 Theo dõi:
 ```bash
