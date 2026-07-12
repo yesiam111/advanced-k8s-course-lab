@@ -1,8 +1,8 @@
 # Lab 09 — SRE, Xử lý sự cố & Capstone
 
-> Bài tổng hợp toàn khóa trên hệ thống **smartapp**. Hai phần: (A) chẩn đoán & chữa một cụm bị cố ý cài lỗi; (B) bảo vệ thiết kế kiến trúc production.
+> Bài tổng hợp toàn khóa trên hệ thống **smartapp**: chẩn đoán & chữa một cụm bị cố ý cài lỗi. Sửa bằng cách nào cũng được — như xử lý sự cố thật, chỉ kết quả cuối được chấm (bằng autograder).
 
-**Thời lượng:** ~180 phút (A: 120' · B: 45–60') · **Hình thức:** cá nhân hoặc nhóm 2–3 · **Yêu cầu:** một cụm smartapp (lab/sandbox) đã được giảng viên "gài lỗi".
+**Thời lượng:** ~120 phút · **Hình thức:** cá nhân hoặc nhóm 2–3 · **Yêu cầu:** một cụm smartapp (lab/sandbox) đã được giảng viên "gài lỗi".
 
 > 🧑‍🏫 **Chuẩn bị (giảng viên):** chạy autograder để gài lỗi trước buổi (mục 0). **Mỗi học viên một tổ hợp lỗi khác nhau** — không chỉ khác số mà khác cả LOẠI lỗi. Cho phép dùng `Ops-Checklist.md`. **Không phát danh mục lỗi cho học viên.**
 
@@ -23,16 +23,15 @@ cd capstone-grader
 
 ---
 
-## Phần A — Chẩn đoán & khắc phục (120')
+## Chẩn đoán & khắc phục (120')
 
 Cụm smartapp của bạn đang hỏng theo **nhiều cách cùng lúc**. Số lượng, loại, và giá trị lỗi **khác nhau giữa các học viên**. Một số lỗi **đa lớp** (một nguyên nhân gốc gây nhiều triệu chứng) và một số là **mồi nhử** — triệu chứng trỏ sai chỗ. Không có danh sách lỗi. Việc của bạn là *điều tra*, không phải đoán.
 
 ### Luật chơi (bắt buộc)
 1. **Phương pháp có hệ thống:** triệu chứng → giả thuyết → thu hẹp bằng *dữ liệu* → xác nhận nguyên nhân gốc → vá → kiểm chứng lại. Đoán mò không được tính.
-2. **Thay đổi một thứ mỗi lần** và **ghi lại** ngay (đây là nguyên liệu cho postmortem).
+2. **Thay đổi một thứ mỗi lần** và **ghi lại** ngay (tránh lặp ngõ cụt, biết đường quay lui).
 3. **Sửa tối thiểu, có chủ đích.** KHÔNG "đốt sạch" (`delete ... --all`, gỡ mọi NetworkPolicy/PDB/policy, tắt mọi lan can bảo mật). Cụm có sẵn vài **kiểm soát ĐÚNG** phải được giữ nguyên — phá chúng bị **trừ điểm**.
 4. **Sửa đúng tầng nguồn.** Nếu cụm do GitOps quản (ArgoCD self-heal), sửa tay sẽ bị hoàn tác — phải tìm và sửa đúng nguồn sự thật.
-5. **Bắt buộc nộp postmortem** (xem mẫu) — thiếu postmortem là **không đạt**, dù cụm có xanh.
 
 ### Khởi động — bản đồ tình trạng
 ```bash
@@ -55,52 +54,23 @@ kubectl get nodes
 - **Pod tạo được ≠ admission khỏe.** Có lỗi chỉ chặn pod *mới* (webhook/policy/quota) — `get pods` trông yên bình.
 - **Có lỗi không hiện trong `get pods`** (latent): rò rỉ qua drain/rollout/backup. Đây là lúc `Ops-Checklist.md` cứu bạn — audit chủ động, đừng chỉ chữa cháy.
 
-### Tiêu chí hoàn thành Phần A
+### Tiêu chí hoàn thành
 - [ ] Mọi pod smartapp `Running`/`Ready`; không `Pending`/`CrashLoop`/`OOMKilled`/`ImagePull*`/`ConfigError`.
 - [ ] `web` có endpoints; gọi được `redis` (và `postgres` nếu có) **bằng tên** (DNS hoạt động).
 - [ ] Tạo được pod mới hợp lệ (admission/quota/webhook không chặn sai).
 - [ ] PVC `Bound`; nếu có CNPG: có `currentPrimary`.
+- [ ] Nếu có Prometheus Operator: ServiceMonitor của `web` scrape được (đúng tên port) — dashboard không "mù".
 - [ ] **Giữ nguyên** các kiểm soát đúng (canary) — không đốt sạch.
-- [ ] **Postmortem** đầy đủ (mỗi lỗi: triệu chứng quan sát → cách thu hẹp → nguyên nhân gốc → bản vá tối thiểu).
 
-### Mẫu postmortem (nộp file `postmortem.md`)
-```markdown
-# Capstone postmortem — <student-id>
-## Lỗi 1
-- Triệu chứng: ...
-- Dữ liệu dùng để chẩn đoán: (lệnh/log/Hubble/sự kiện) ...
-- Nguyên nhân gốc: ...
-- Bản vá (tối thiểu): ...
-## Lỗi 2
-...
-```
-
-### Chấm tự động Phần A (autograder)
-Trỏ `kubectl` tới cụm học viên rồi chấm — soi cụm thật + đọc postmortem:
+### Chấm tự động (autograder)
+Trỏ `kubectl` tới cụm học viên rồi chấm — soi cụm thật, mọi hạng mục kiểm chứng bằng script:
 ```bash
 cd capstone-grader
-./grade.sh sv001 smartapp ../postmortem-sv001.md
+./grade.sh sv001 smartapp
 ```
-Grader chấm /100, **đạt khi ≥ 80 ĐIỂM *và* postmortem phủ ≥ 60% số lỗi**. Nó:
+Grader chấm /100, **đạt khi ≥ 80 ĐIỂM**. Nó:
 - chấm sức khỏe cụm + kết nối/DNS + từng lỗi đã gài (đối chiếu seed biến thể, chống chép);
-- **trừ điểm** nếu canary good-posture bị xóa (chống "đốt sạch");
-- yêu cầu postmortem nêu đúng các lỗi — sửa được cụm mà không hiểu *vì sao* sẽ không qua.
-
-> 💯 Giảng viên: ngoài điểm grader, đánh giá CHẤT LƯỢNG quy trình — học viên dùng dữ liệu hay sửa mò? bản vá tối thiểu hay phá diện rộng?
-
----
-
-## Phần B — Bảo vệ thiết kế kiến trúc (45–60')
-
-Mỗi nhóm trình bày (10–12') một thiết kế production cho smartapp và bảo vệ quyết định:
-
-1. **Bảo mật (Bài 4)** — hardening, policy enforce, secrets, multi-tenancy.
-2. **Quan sát (Bài 3)** — metrics/logs/traces, SLO & cảnh báo error-budget.
-3. **Triển khai (Bài 6)** — GitOps, progressive delivery, rollback.
-4. **Mở rộng & tin cậy (Bài 7/8)** — autoscaling, lập lịch/topology, dữ liệu (HA, backup/DR).
-5. **Vận hành (Bài 9)** — checklist, quy trình xử lý sự cố, error-budget policy.
-
-**Tiêu chí chấm B:** đầy đủ (phủ 5 trụ), lập luận đánh đổi (vì sao X thay Y), tính thực tế (chạy được trên cụm đã học), và **liên hệ với chính các lỗi vừa gặp ở Phần A** (thiết kế của bạn ngăn chúng tái diễn thế nào?).
+- **trừ điểm** nếu canary good-posture bị xóa (chống "đốt sạch").
 
 ---
 
@@ -119,6 +89,5 @@ Hành trình smartapp qua 9 bài: **internals → operator → observability →
 Thông điệp cuối: vận hành Kubernetes **an toàn, bảo mật, tối ưu** là một kỷ luật liên tục — đo bằng SLO, giảm công sức bằng tự động hóa, và biến mỗi sự cố thành một cải tiến (checklist). Không có "xong"; chỉ có vận hành ngày càng tốt hơn.
 
 ### Checklist hoàn thành khóa
-- [ ] Phần A: khôi phục cụm về khỏe mạnh **bằng chẩn đoán có dữ liệu**, giữ canary, kèm postmortem đầy đủ.
-- [ ] Phần B: trình bày & bảo vệ thiết kế production phủ 5 trụ, liên hệ lỗi Phần A.
+- [ ] Khôi phục cụm về khỏe mạnh **bằng chẩn đoán có dữ liệu**, giữ canary, đạt ≥80 điểm grader.
 - [ ] Áp dụng phương pháp có hệ thống và `Ops-Checklist.md` xuyên suốt.
